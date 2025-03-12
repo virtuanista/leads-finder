@@ -10,30 +10,30 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # Configuración
-PREFIJOS = ["+595"]  # Prefijo de Paraguay
+PREFIJOS = ["+595", "+598"]  # Prefijos de Paraguay y Uruguay
 SECTORES = [
-    # Firmas de inversión y capital privado
-    "inversiones paraguay",
-    "private equity paraguay",
-    "fondo de inversión paraguay",
+    # Términos relacionados a Paraguay
+    "residencia fiscal paraguay",
+    "ciudadanía paraguay",
+    "abogados migratorios paraguay",
+    "firma contable paraguay",
+    "asesoría fiscal paraguay",
+    "consultoría migratoria paraguay",
     "family office paraguay",
-    # Empresas inmobiliarias
-    "inmobiliaria paraguay",
-    "desarrolladora inmobiliaria paraguay",
-    "real estate paraguay",
-    "constructora paraguay",
-    # Agronegocios
-    "agribusiness paraguay",
-    "agronegocios paraguay",
-    "empresa agrícola paraguay",
-    "agricultural company paraguay",
-    "agroexportadora paraguay",
-    # Retail y comercio
-    "retail paraguay",
-    "cadena comercial paraguay",
-    "franquicia paraguay",
-    "mayorista paraguay",
-    "distribuidor paraguay"
+    "expatriados paraguay",
+    "banca privada paraguay",
+    "offshore paraguay",
+    # Términos relacionados a Uruguay
+    "residencia fiscal uruguay",
+    "ciudadanía uruguay",
+    "abogados migratorios uruguay",
+    "firma contable uruguay",
+    "asesoría fiscal uruguay",
+    "consultoría migratoria uruguay",
+    "family office uruguay",
+    "expatriados uruguay",
+    "banca privada uruguay",
+    "offshore uruguay"
 ]
 
 class LeadsExtractor:
@@ -66,16 +66,34 @@ class LeadsExtractor:
 
     def extraer_info_adicional(self, descripcion):
         email = re.findall(r'[\w\.-]+@[\w\.-]+', descripcion)
-        # Adaptamos la búsqueda de direcciones para Paraguay
-        direccion = re.findall(r'(?:Calle|Avenida|Ruta|Boulevard).*?(?=\s{2,}|$)', descripcion)
+        # Adaptamos la búsqueda de direcciones para incluir formatos de ambos países
+        direccion = re.findall(r'(?:Calle|Avenida|Ruta|Boulevard|Av\.|Dr\.|Camino).*?(?=\s{2,}|$)', descripcion)
+        
+        # Detectar país
+        pais = self.detectar_pais(descripcion)
+        
         return {
             'email': email[0] if email else '',
             'direccion': direccion[0] if direccion else '',
-            'pais': 'Paraguay'  # Siempre será Paraguay
+            'pais': pais
         }
 
     def detectar_pais(self, texto):
-        return 'Paraguay'  # Siempre retornamos Paraguay ya que es nuestro foco
+        """Detecta si el texto está relacionado con Paraguay o Uruguay"""
+        texto = texto.lower()
+        if any(keyword in texto for keyword in ["paraguay", "asunción", "asuncion", "py", "paraguayo", "paraguaya"]):
+            return "Paraguay"
+        elif any(keyword in texto for keyword in ["uruguay", "montevideo", "uy", "uruguayo", "uruguaya"]):
+            return "Uruguay"
+        
+        # Si no hay palabras clave, intentamos detectar por prefijos telefónicos
+        if "+595" in texto or "0595" in texto:
+            return "Paraguay"
+        elif "+598" in texto or "0598" in texto:
+            return "Uruguay"
+        
+        # Si no podemos determinar, usamos el término de búsqueda
+        return None  # Lo determinaremos por el término de búsqueda
 
     def manejar_recaptcha(self):
         try:
@@ -92,42 +110,62 @@ class LeadsExtractor:
             print("No se encontró reCAPTCHA o no fue necesario marcarlo")
         return False
 
-    def normalizar_numero_paraguay(self, numero):
-        """Normaliza un número de teléfono al formato paraguayo (+595)"""
+    def normalizar_numero_telefono(self, numero, prefijo_pais):
+        """Normaliza un número de teléfono al formato internacional correspondiente"""
         # Eliminar espacios y caracteres especiales
         numero = re.sub(r'[\s\-\(\)]', '', numero)
         
-        # Si empieza con 0595, convertir a +595
-        if numero.startswith('0595'):
+        # Si ya tiene formato internacional correcto, retornarlo
+        if numero.startswith(prefijo_pais):
+            return numero
+        
+        # Si empieza con 0 + el prefijo sin +
+        if numero.startswith('0' + prefijo_pais[1:]):
             return '+' + numero[1:]
         
-        # Si empieza con 595, añadir +
-        elif numero.startswith('595'):
+        # Si empieza con el prefijo sin +
+        elif numero.startswith(prefijo_pais[1:]):
             return '+' + numero
             
         # Si es un número local (empieza con 0), añadir prefijo país
         elif numero.startswith('0'):
-            return '+595' + numero[1:]
+            return prefijo_pais + numero[1:]
             
         # Si es un número local sin 0, añadir prefijo país
         else:
-            return '+595' + numero
+            return prefijo_pais + numero
 
-    def es_numero_paraguay_valido(self, numero):
-        """Verifica si un número es un número de Paraguay válido"""
+    def es_numero_valido(self, numero, prefijo_pais):
+        """Verifica si un número es válido para el país indicado"""
         numero_limpio = re.sub(r'[\s\-\(\)]', '', numero)
-        # Patrón para números paraguayos: +595 seguido de 9 dígitos
-        patron = r'^\+595\d{9}$'
+        # Verificar formato internacional y longitud
+        if prefijo_pais == "+595":  # Paraguay
+            patron = r'^\+595\d{9}$'  # +595 seguido de 9 dígitos
+        elif prefijo_pais == "+598":  # Uruguay
+            patron = r'^\+598\d{8}$'  # +598 seguido de 8 dígitos
         return bool(re.match(patron, numero_limpio))
 
-    def extraer_numeros_paraguay(self, texto):
-        """Extrae números de teléfono paraguayos del texto"""
-        # Patrones más específicos para capturar números paraguayos
-        patrones = [
-            r'(?:tel[eé]fono|tel|phone|movil|móvil|celular|contact|fijo|fax)?\s*:?\s*(?:\+595|595|0)[\s\-\(\)]*(?:\d[\s\-\(\)]*){8,}',  # Números con prefijo país
-            r'(?:\+595|595|0)[\s\-\(\)]*(?:\d[\s\-\(\)]*){8,}',  # Números sin etiqueta
-            r'\b(?:0|9)[\s\-\(\)]*(?:\d[\s\-\(\)]*){7,}'  # Números locales
-        ]
+    def extraer_numeros_telefono(self, texto, consulta):
+        """Extrae números de teléfono del texto según el país de la consulta"""
+        # Determinar el país por la consulta
+        pais_consulta = "Paraguay" if "paraguay" in consulta.lower() else "Uruguay"
+        prefijo_pais = "+595" if pais_consulta == "Paraguay" else "+598"
+        
+        # Patrones de búsqueda según el país
+        if pais_consulta == "Paraguay":
+            patrones = [
+                r'(?:tel[eé]fono|tel|phone|movil|móvil|celular|contact|fijo|fax|whatsapp|wsp|wa)?\s*:?\s*(?:\+595|595|0)[\s\-\(\)]*(?:\d[\s\-\(\)]*){8,}',
+                r'(?:\+595|595|0)[\s\-\(\)]*(?:\d[\s\-\(\)]*){8,}',
+                r'\b(?:0|9)[\s\-\(\)]*(?:\d[\s\-\(\)]*){7,}'
+            ]
+            long_numero = 12  # +595 + 9 dígitos
+        else:  # Uruguay
+            patrones = [
+                r'(?:tel[eé]fono|tel|phone|movil|móvil|celular|contact|fijo|fax|whatsapp|wsp|wa)?\s*:?\s*(?:\+598|598|0)[\s\-\(\)]*(?:\d[\s\-\(\)]*){7,}',
+                r'(?:\+598|598|0)[\s\-\(\)]*(?:\d[\s\-\(\)]*){7,}',
+                r'\b(?:0|9)[\s\-\(\)]*(?:\d[\s\-\(\)]*){6,}'
+            ]
+            long_numero = 11  # +598 + 8 dígitos
         
         numeros_encontrados = []
         texto = texto.lower()  # Convertir a minúsculas para mejor búsqueda
@@ -137,19 +175,31 @@ class LeadsExtractor:
             for match in matches:
                 # Limpiar y normalizar el número
                 numero_limpio = re.sub(r'[^\d\+]', '', match)  # Mantener solo dígitos y +
-                if numero_limpio.startswith('0'):
-                    numero_limpio = numero_limpio[1:]  # Quitar el 0 inicial
-                if not numero_limpio.startswith('+'):
-                    if numero_limpio.startswith('595'):
-                        numero_limpio = '+' + numero_limpio
-                    else:
-                        numero_limpio = '+595' + numero_limpio
+                numero_normalizado = self.normalizar_numero_telefono(numero_limpio, prefijo_pais)
                 
-                # Verificar longitud válida (código país + 9 dígitos)
-                if len(re.sub(r'[^\d]', '', numero_limpio)) == 12:
-                    numeros_encontrados.append(numero_limpio)
+                # Verificar longitud válida
+                if len(re.sub(r'[^\d]', '', numero_normalizado)) == long_numero:
+                    numeros_encontrados.append(numero_normalizado)
         
         return list(set(numeros_encontrados))  # Eliminar duplicados
+
+    def extraer_whatsapp(self, texto):
+        """Extrae específicamente menciones a WhatsApp"""
+        texto = texto.lower()
+        # Buscar patrones específicos de WhatsApp
+        patrones_whatsapp = [
+            r'(?:whatsapp|wsp|wa|whats app)[\s\:]*(?:\+?[0-9][\s\-\(\)]*){7,}',
+            r'(?:contacto|contactar|escribir)(?:\s\w+){0,3}\s(?:al|por)\s(?:whatsapp|wsp|wa)',
+            r'(?:escríbenos|escribenos|contáctenos|contactenos)(?:\s\w+){0,3}\s(?:whatsapp|wsp|wa)'
+        ]
+        
+        es_whatsapp = False
+        for patron in patrones_whatsapp:
+            if re.search(patron, texto, re.IGNORECASE):
+                es_whatsapp = True
+                break
+                
+        return es_whatsapp
 
     def buscar_numeros(self, consulta):
         print(f"\n🔍 Iniciando búsqueda para: {consulta}")
@@ -177,8 +227,9 @@ class LeadsExtractor:
                 EC.presence_of_element_located((By.NAME, "q"))
             )
             search_box.clear()
-            # Quitamos el site:py y mejoramos la consulta
-            search_box.send_keys(consulta)
+            # Mejorar la consulta para encontrar contactos
+            search_query = f'{consulta} AND ("contacto" OR "teléfono" OR "telefono" OR "contact" OR "WhatsApp" OR "correo" OR "email")'
+            search_box.send_keys(search_query)
             search_box.send_keys(Keys.RETURN)
             time.sleep(3)
 
@@ -241,34 +292,62 @@ class LeadsExtractor:
                                 print(f"📝 Texto extraído: {texto_completo[:150]}...")
                                 
                                 # Buscar números de teléfono
-                                numeros = self.extraer_numeros_paraguay(texto_completo)
+                                numeros = self.extraer_numeros_telefono(texto_completo, consulta)
                                 
-                                if numeros:
-                                    print(f"✅ Encontrado(s) {len(numeros)} número(s):")
+                                # Extraer información adicional
+                                info_adicional = self.extraer_info_adicional(texto_completo)
+                                if not info_adicional['pais']:
+                                    info_adicional['pais'] = "Paraguay" if "paraguay" in consulta.lower() else "Uruguay"
+                                
+                                # Determinar si algún número es WhatsApp
+                                es_whatsapp = self.extraer_whatsapp(texto_completo)
+                                
+                                if numeros or info_adicional['email']:
+                                    print(f"✅ Encontrado(s) {len(numeros)} número(s) y/o email:")
+                                    
+                                    # Si hay email pero no números, agregar un registro con el email
+                                    if info_adicional['email'] and not numeros:
+                                        nuevo_lead = [
+                                            titulo,
+                                            enlace,
+                                            "",  # No hay número
+                                            info_adicional['email'],
+                                            info_adicional['direccion'],
+                                            info_adicional['pais'],
+                                            consulta,
+                                            "Sí" if es_whatsapp else "No",
+                                            time.strftime("%Y-%m-%d")
+                                        ]
+                                        
+                                        self.data.append(nuevo_lead)
+                                        leads_en_pagina_actual += 1
+                                        print(f"  📧 Email: {info_adicional['email']}")
+                                    
+                                    # Para cada número encontrado, crear un registro
                                     for numero in numeros:
-                                        info_adicional = self.extraer_info_adicional(texto_completo)
                                         nuevo_lead = [
                                             titulo,
                                             enlace,
                                             numero,
                                             info_adicional['email'],
                                             info_adicional['direccion'],
-                                            'Paraguay',
+                                            info_adicional['pais'],
                                             consulta,
+                                            "Sí" if es_whatsapp else "No",
                                             time.strftime("%Y-%m-%d")
                                         ]
                                         
                                         self.data.append(nuevo_lead)
                                         leads_en_pagina_actual += 1
                                         
-                                        print(f"  📞 Número: {numero}")
+                                        print(f"  📞 Número: {numero} {'(WhatsApp)' if es_whatsapp else ''}")
                                         if info_adicional['email']:
                                             print(f"  📧 Email: {info_adicional['email']}")
                                         
                                         # Guardar inmediatamente
                                         self.guardar_datos_incrementalmente()
                                 else:
-                                    print("❌ No se encontraron números en este resultado")
+                                    print("❌ No se encontraron números ni emails en este resultado")
                             else:
                                 print("⚠️ No se pudo extraer texto del resultado")
                             
@@ -314,21 +393,22 @@ class LeadsExtractor:
                 return
                 
             df = pd.DataFrame(self.data, columns=[
-                "Empresa",
+                "Empresa/Entidad",
                 "Enlace",
                 "Teléfono",
                 "Email",
                 "Dirección",
                 "País",
                 "Sector",
+                "WhatsApp",
                 "Fecha Extracción"
             ])
             
-            # Eliminar duplicados basados en el número de teléfono
-            df = df.drop_duplicates(subset=['Teléfono'], keep='first')
+            # Eliminar duplicados basados en el número de teléfono y email
+            df = df.drop_duplicates(subset=['Teléfono', 'Email'], keep='first')
             
             # Guardar en Excel con formato
-            with pd.ExcelWriter('leads_empresas.xlsx', engine='openpyxl', mode='w') as writer:
+            with pd.ExcelWriter('leads_contactos.xlsx', engine='openpyxl', mode='w') as writer:
                 df.to_excel(writer, index=False, sheet_name='Leads')
                 workbook = writer.book
                 worksheet = writer.sheets['Leads']
@@ -353,20 +433,21 @@ class LeadsExtractor:
 
     def ejecutar(self):
         print("\n🚀 Iniciando extracción de leads...")
-        print(f"📱 Buscando números con prefijo: {PREFIJOS[0]}")
-        print(f"🎯 Total de sectores a buscar: {len(SECTORES)}")
+        print(f"🌎 Países objetivo: Paraguay (+595) y Uruguay (+598)")
+        print(f"🎯 Total de términos a buscar: {len(SECTORES)}")
         
         try:
             total_leads = 0
             for i, sector in enumerate(SECTORES, 1):
-                print(f"\n📊 Progreso: Sector {i}/{len(SECTORES)}")
-                query = f'"{sector}" AND ("contacto" OR "teléfono" OR "telefono" OR "contact") AND "{PREFIJOS[0]}"'
-                self.buscar_numeros(query)
+                print(f"\n📊 Progreso: Término {i}/{len(SECTORES)}")
+                
+                # Simplificamos la query para ser más directa
+                self.buscar_numeros(sector)
                 
                 # Actualizar contador total
                 if len(self.data) > total_leads:
                     nuevos_leads = len(self.data) - total_leads
-                    print(f"✨ Encontrados {nuevos_leads} nuevos leads en este sector")
+                    print(f"✨ Encontrados {nuevos_leads} nuevos leads en esta búsqueda")
                     total_leads = len(self.data)
                 
                 print(f"⏳ Esperando antes de la siguiente búsqueda...")
@@ -377,7 +458,7 @@ class LeadsExtractor:
             else:
                 print(f"\n✅ Proceso finalizado exitosamente")
                 print(f"📊 Total de leads únicos encontrados: {total_leads}")
-                print("📁 Datos guardados en 'leads_empresas.xlsx'")
+                print("📁 Datos guardados en 'leads_contactos.xlsx'")
         
         except Exception as e:
             print(f"\n❌ Error durante la ejecución: {str(e)}")
